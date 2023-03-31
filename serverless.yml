@@ -1,0 +1,99 @@
+service: sls-python-thumbnail
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.8
+  region: us-east-1
+  profile: default
+  stage: dev
+  memorySize: 128
+  environment:
+    THUMBNAIL_SIZE: 128
+    REGION_NAME: ${self:provider.region}
+    DYNAMODB_TABLE: ImgUrlTable
+    LAYERS: arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p38-Pillow:6
+
+  
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Resource: '*'
+          Action: 's3:*'
+        - Effect: Allow
+          Action:
+            - dynamodb:*
+          Resource:
+            - 'arn:aws:dynamodb:us-east-1:788950990295:table/ImgUrlTable'
+
+custom: 
+  bucket: sls-thumbnail-jeissonarcadio
+  # its for run locally
+  pythonRequirements: 
+    dockerizePip: true 
+
+functions:
+  s3_thumbnail_generator:
+    handler: handler.s3_thumbnail_generator
+    layers:
+      - ${self:provider.environment.LAYERS}
+    events: 
+      - s3:
+          bucket: ${self:custom.bucket}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .png
+            
+  s3_get_thumbnail_urls:
+    handler: handler.s3_get_thumbnail_urls
+    layers:
+      - ${self:provider.environment.LAYERS}
+    events: 
+      - http: 
+          path: images/all
+          method: get
+          cors: true
+
+  s3_get_item:
+    handler: handler.s3_get_item
+    layers:
+      - ${self:provider.environment.LAYERS}
+    events: 
+      - http:
+          path: images/get/{uuid}
+          method: get
+          cors: true
+
+  s3_delete_item:
+    handler: handler.s3_delete_item
+    layers:
+      - ${self:provider.environment.LAYERS}
+    events: 
+      - http: 
+          path: images/delete/{uuid}
+          method: delete
+          cors: true
+
+
+plugins:
+  - serverless-python-requirements
+
+resources:
+  Resources: 
+    ImgUrlTable:
+      Type: AWS::DynamoDB::Table
+      Properties: 
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        # BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: uuid
+            AttributeType: S
+        KeySchema:
+          - AttributeName: uuid
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
